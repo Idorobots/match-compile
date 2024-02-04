@@ -1,3 +1,7 @@
+#lang racket
+
+(provide compile-combine)
+
 (define (node-type n)
   (car n))
 
@@ -42,19 +46,22 @@
 (define (compile-case pattern cont)
   ;; NOTE These should alawys produce a type & value match for each step, to make combining paths easier.
   (cond ((eq? pattern '_)
-         (match-type 'any
+         (match-type 'any?
                      (match-wildcard cont)))
         ((symbol? pattern)
-         (match-type 'any
+         (match-type 'any?
                      (match-binding pattern cont)))
         ((number? pattern)
-         (match-type 'number
+         (match-type 'number?
                      (match-value pattern cont)))
         ((boolean? pattern)
-         (match-type 'boolean
+         (match-type 'boolean?
+                     (match-value pattern cont)))
+        ((string? pattern)
+         (match-type 'string?
                      (match-value pattern cont)))
         ((null? pattern)
-         (match-type 'nil
+         (match-type 'null?
                      (match-value pattern cont)))
         ((pair? pattern)
          (cond ((eq? (car pattern) 'quote)
@@ -64,11 +71,11 @@
                 (let ((c (compile-case (caddr pattern)
                                        cont)))
                   (if (and (eq? (node-type c) 'type)
-                           (eq? (node-param c) 'any))
+                           (eq? (node-param c) 'any?))
                       (match-type (cadr pattern) (node-children c))
                       (match-type (cadr pattern) c))))
                (else
-                (match-type 'pair
+                (match-type 'pair?
                             (access 'car
                                     (compile-case (car pattern)
                                                   (access 'cdr
@@ -129,24 +136,23 @@
        `(let ((,name (,(node-param node) ,value)))
           ,(compile-decision-tree name (node-children node)))))
     ((value)
-     `(if (equal? ,value ,(node-param node))
+     `(if (equal? ,value ',(node-param node))
           ,(compile-decision-tree value (node-children node))
           (raise "Match error")))
     ((type)
-     `(if (eq? (typeof ,value) ,(node-param node))
+     `(if (,(node-param node) ,value)
           ,(compile-decision-tree value (node-children node))
           (raise "Match error")))
     ((switch-value)
      (foldr (lambda (c acc)
-              `(if (equal? ,value ,(car c))
+              `(if (equal? ,value ',(car c))
                    ,(compile-decision-tree value (cadr c))
                    ,acc))
             '(raise "Match error")
             (cadr node)))
     ((switch-type)
      (foldr (lambda (c acc)
-              `(if (eq? (typeof ,value)
-                        ,(car c))
+              `(if (,(car c) ,value)
                    ,(compile-decision-tree value (cadr c))
                    ,acc))
             '(raise "Match error")
@@ -162,23 +168,22 @@
     (else
      (error "Bad node: " node))))
 
-(define (compile-match value cases)
+(define (compile-combine value cases)
   (let* ((compiled (map (lambda (c)
                                  (compile-case (car c)
                                                (action (cadr c))))
                                cases))
-         (_foo (pretty-print compiled))
          (combined (combine-paths compiled))
-         (_bar (pretty-print combined))
          (translated (compile-decision-tree value combined)))
     translated))
 
 ;; Example
-(compile-match
- '(((1 2 ?rest) (match-list ?rest))
-   ((1 _ '(hurr)) (match-quote))
-   ((1 2) (match-shortlist))
-   (#t (match-boolean ?x))
-   (42 (match-number ?y))
-   ((: number _) (match-any-number))
-   (_ 'default-action)))
+;; (compile-combine
+;;  'foo
+;;  '(((1 2 ?rest) (match-list ?rest))
+;;    ((1 _ '(hurr)) (match-quote))
+;;    ((1 2) (match-shortlist))
+;;    (#t (match-boolean ?x))
+;;    (42 (match-number ?y))
+;;    ((: number? _) (match-any-number))
+;;    (_ 'default-action)))
