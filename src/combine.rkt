@@ -50,7 +50,7 @@
          (match-wildcard cont))
         ((symbol? pattern)
          (match-binding pattern cont))
-         ;; NOTE These should alawys produce a type & value match for each step, to make combining paths easier.
+        ;; NOTE These should alawys produce a type & value match for each step, to make combining paths easier.
         ((number? pattern)
          (match-type 'number?
                      (match-value pattern cont)))
@@ -63,26 +63,27 @@
         ((null? pattern)
          (match-type 'null?
                      (match-value pattern cont)))
+        ((and (pair? pattern)
+              (eq? (car pattern) 'quote))
+         (match-value (cadr pattern) cont))
+        ((and (pair? pattern)
+              (eq? (car pattern) ':))
+         (match-type (cadr pattern)
+                     (compile-case (caddr pattern)
+                                   cont
+                                   (+ 1 level))))
         ((pair? pattern)
-         (cond ((eq? (car pattern) 'quote)
-                (match-value (cadr pattern) cont))
-               ((eq? (car pattern) ':)
-                (match-type (cadr pattern)
-                            (compile-case (caddr pattern)
-                                          cont
-                                          (+ 1 level))))
-               (else
-                (match-type 'pair?
-                            ;; FIXME A workaround for the cdr down the line to have the full node.
-                            (let ((e (string->symbol (format "tmp-par-binding-~a" level))))
-                              (match-binding e
-                                             (access `(car ,e)
-                                                     (compile-case (car pattern)
-                                                                   (access `(cdr ,e)
-                                                                           (compile-case (cdr pattern)
-                                                                                         cont
-                                                                                         (+ 1 level)))
-                                                                   (+ 1 level)))))))))
+         (match-type 'pair?
+                     ;; FIXME A workaround for the cdr down the line to have the full node.
+                     (let ((e (string->symbol (format "tmp-par-binding-~a" level))))
+                       (match-binding e
+                                      (access `(car ,e)
+                                              (compile-case (car pattern)
+                                                            (access `(cdr ,e)
+                                                                    (compile-case (cdr pattern)
+                                                                                  cont
+                                                                                  (+ 1 level)))
+                                                            (+ 1 level)))))))
         (else
          (match-fail))))
 
