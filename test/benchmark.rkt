@@ -1,6 +1,7 @@
 #lang racket
 
 (require "../src/utils.rkt")
+(require (for-syntax "../src/naive.rkt"))
 (require (for-syntax "../src/combine.rkt"))
 
 (define (run-racket v)
@@ -18,6 +19,30 @@
       ((list 1 42 3) 'nope)
       (value #:when (string? value) (string-length value))
       (_ 'default))))
+
+(define-syntax (match-naive stx)
+  (syntax-case stx ()
+    ((match-naive expr cases ...)
+     (datum->syntax stx
+                    (compile-naive (syntax->datum #'expr)
+                                     (syntax->datum #'(cases ...)))))))
+
+(define (run-naive v)
+  (with-handlers
+      ((any? (lambda (e) e)))
+    (match-naive v
+                 ((1 2 . rest) rest)
+                 ((1 _ 'hurr) 'hurr)
+                 ((1 2 3) 123)
+                 ((1 (2 3 4) 5) 234)
+                 (#t 'boolean)
+                 ((1 2 "string") "text")
+                 (42 'number)
+                 ("string again" 23)
+                 ((1 42 3) 'nope)
+                 ((: string? value) (string-length value))
+                 (_ 'default)
+                 )))
 
 (define-syntax (match-combine stx)
   (syntax-case stx ()
@@ -87,10 +112,16 @@
 (display "Racket match:  ")
 (define racket-result (time (map run-racket test-input)))
 
+(display "Naïve match:   ")
+(define naive-result (time (map run-naive test-input)))
+
 (display "Combine match: ")
 (define combine-result (time (map run-combine test-input)))
-(unless (equal? racket-result combine-result)
+
+(unless (and (equal? racket-result naive-result)
+            (equal? racket-result combine-result))
   (displayln "Not equal!")
   (displayln test-input)
   (displayln racket-result)
+  (displayln naive-result)
   (displayln combine-result))
