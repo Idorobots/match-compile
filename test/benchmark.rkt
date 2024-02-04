@@ -110,12 +110,15 @@
          (iota 0 1000000))))
 
 (display "Racket match:  ")
+(collect-garbage 'major)
 (define racket-result (time (map run-racket test-input)))
 
 (display "Naïve match:   ")
+(collect-garbage 'major)
 (define naive-result (time (map run-naive test-input)))
 
 (display "Combine match: ")
+(collect-garbage 'major)
 (define combine-result (time (map run-combine test-input)))
 
 (unless (and (equal? racket-result naive-result)
