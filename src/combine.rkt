@@ -43,14 +43,14 @@
 (define (ordered cases)
   (list 'ordered cases))
 
-(define (compile-case pattern cont)
-  ;; NOTE These should alawys produce a type & value match for each step, to make combining paths easier.
+(define (compile-case pattern cont level)
+  ;; FIXME The level is only needed to consistently combine the paths at a later phase.
+  ;; FIXME This probably can be done better by introducing explicit nodes for constructors and handling those later.
   (cond ((eq? pattern '_)
-         (match-type 'any?
-                     (match-wildcard cont)))
+         (match-wildcard cont))
         ((symbol? pattern)
-         (match-type 'any?
-                     (match-binding pattern cont)))
+         (match-binding pattern cont))
+         ;; NOTE These should alawys produce a type & value match for each step, to make combining paths easier.
         ((number? pattern)
          (match-type 'number?
                      (match-value pattern cont)))
@@ -65,22 +65,24 @@
                      (match-value pattern cont)))
         ((pair? pattern)
          (cond ((eq? (car pattern) 'quote)
-                (match-value pattern cont))
+                (match-value (cadr pattern) cont))
                ((eq? (car pattern) ':)
-                ;; NOTE If the inner type is any then we can skip one level to make combining easier.
-                (let ((c (compile-case (caddr pattern)
-                                       cont)))
-                  (if (and (eq? (node-type c) 'type)
-                           (eq? (node-param c) 'any?))
-                      (match-type (cadr pattern) (node-children c))
-                      (match-type (cadr pattern) c))))
+                (match-type (cadr pattern)
+                            (compile-case (caddr pattern)
+                                          cont
+                                          (+ 1 level))))
                (else
                 (match-type 'pair?
-                            (access 'car
-                                    (compile-case (car pattern)
-                                                  (access 'cdr
-                                                          (compile-case (cdr pattern)
-                                                                        cont))))))))
+                            ;; FIXME A workaround for the cdr down the line to have the full node.
+                            (let ((e (string->symbol (format "tmp-par-binding-~a" level))))
+                              (match-binding e
+                                             (access `(car ,e)
+                                                     (compile-case (car pattern)
+                                                                   (access `(cdr ,e)
+                                                                           (compile-case (cdr pattern)
+                                                                                         cont
+                                                                                         (+ 1 level)))
+                                                                   (+ 1 level)))))))))
         (else
          (match-fail))))
 
@@ -112,7 +114,9 @@
          (switch-value (map (lambda (g)
                               (list (node-param (car g))
                                     (combine-paths (map node-children g))))
-                            by-param))))))
+                            by-param)))
+        (else
+         (error "Bad group:" group)))))
   (let* ((by-type (group-by node-type cases))
          (grouped (map combine-group by-type)))
     (if (> (length grouped) 1)
@@ -133,7 +137,8 @@
           ,(compile-decision-tree name (node-children node)))))
     ((access)
      (let ((name (gensym 'v)))
-       `(let ((,name (,(node-param node) ,value)))
+       ;; FIXME Ignoring the value as the path-compiler has already embedded the temporary value name in the nodes.
+       `(let ((,name ,(node-param node)))
           ,(compile-decision-tree name (node-children node)))))
     ((value)
      `(if (equal? ,value ',(node-param node))
@@ -171,7 +176,8 @@
 (define (compile-combine value cases)
   (let* ((compiled (map (lambda (c)
                                  (compile-case (car c)
-                                               (action (cadr c))))
+                                               (action (cadr c))
+                                               0))
                                cases))
          (combined (combine-paths compiled))
          (translated (compile-decision-tree value combined)))
